@@ -206,6 +206,15 @@ vim.keymap.set('n', '<leader>ur', function()
   vim.o.relativenumber = not vim.o.relativenumber
 end, { desc = 'Toggle [r]elative numbering', noremap = true, silent = true })
 
+vim.keymap.set('n', '<leader>ub', function()
+  if vim.o.bg == 'light' then
+    vim.o.bg = 'dark'
+  else
+    vim.o.bg = 'light'
+  end
+  vim.notify(string.format('background is %s', vim.o.bg))
+end, { desc = 'Toggle [b]ackground', noremap = true, silent = true })
+
 -- Binding to toggle line numbering
 vim.keymap.set('n', '<leader>un', function()
   vim.o.number = not vim.o.number
@@ -274,6 +283,43 @@ end
 ---@type vim.Option
 local rtp = vim.opt.rtp
 rtp:prepend(lazypath)
+
+---@param cb fun(cmp: blink.cmp.API)
+---@return fun(cmp: blink.cmp.API): boolean
+local function wrap_scroll_page(cb)
+  return function(cmp)
+    if cmp.is_menu_visible() then
+      vim.schedule(cb)
+      return true
+    else
+      return false
+    end
+  end
+end
+
+local function scroll_page_up()
+  local list = require 'blink.cmp.completion.list'
+  if #list.items == 0 or list.context == nil then
+    return
+  elseif list.selected_item_idx == nil then
+    return list.select(#list.items)
+  else
+    local page_size = require('blink.cmp.completion.windows.menu').win:get_height()
+    return list.select(math.max(list.selected_item_idx - page_size, 1))
+  end
+end
+
+local function scroll_page_down()
+  local list = require 'blink.cmp.completion.list'
+  if #list.items == 0 or list.context == nil then
+    return
+  elseif list.selected_item_idx == nil then
+    return list.select(#list.items)
+  else
+    local page_size = require('blink.cmp.completion.windows.menu').win:get_height()
+    return list.select(math.min(list.selected_item_idx + page_size, #list.items))
+  end
+end
 
 -- [[ Configure and install plugins ]]
 --
@@ -402,6 +448,52 @@ require('lazy').setup({
         topdelete = { text = '‾' },
         changedelete = { text = '~' },
       },
+      on_attach = function(bufnr)
+        local gitsigns = require 'gitsigns'
+        local function map(mode, l, r, opts)
+          opts = opts or {}
+          opts.buffer = bufnr
+          vim.keymap.set(mode, l, r, opts)
+        end
+        -- Navigation
+        map('n', ']c', function()
+          if vim.wo.diff then
+            vim.cmd.normal { ']c', bang = true }
+          else
+            gitsigns.nav_hunk 'next'
+          end
+        end, { desc = 'Jump to next git [c]hange' })
+        map('n', '[c', function()
+          if vim.wo.diff then
+            vim.cmd.normal { '[c', bang = true }
+          else
+            gitsigns.nav_hunk 'prev'
+          end
+        end, { desc = 'Jump to previous git [c]hange' })
+        -- Actions
+        -- visual mode
+        map('v', '<leader>ghs', function()
+          gitsigns.stage_hunk { vim.fn.line '.', vim.fn.line 'v' }
+        end, { desc = 'git [s]tage hunk' })
+        map('v', '<leader>ghr', function()
+          gitsigns.reset_hunk { vim.fn.line '.', vim.fn.line 'v' }
+        end, { desc = 'git [r]eset hunk' })
+        -- normal mode
+        map('n', '<leader>ghs', gitsigns.stage_hunk, { desc = '[g]it [s]tage hunk' })
+        map('n', '<leader>ghr', gitsigns.reset_hunk, { desc = '[g]it [r]eset hunk' })
+        map('n', '<leader>ghS', gitsigns.stage_buffer, { desc = '[g]it [S]tage buffer' })
+        map('n', '<leader>ghu', gitsigns.stage_hunk, { desc = '[g]it [u]ndo stage hunk' })
+        map('n', '<leader>ghR', gitsigns.reset_buffer, { desc = '[g]it [R]eset buffer' })
+        map('n', '<leader>ghp', gitsigns.preview_hunk, { desc = '[g]it [p]review hunk' })
+        map('n', '<leader>ghb', gitsigns.blame_line, { desc = '[g]it [b]lame line' })
+        map('n', '<leader>ghd', gitsigns.diffthis, { desc = '[g]it [d]iff against index' })
+        map('n', '<leader>ghD', function()
+          gitsigns.diffthis '@'
+        end, { desc = 'git [D]iff against last commit' })
+        -- Toggles
+        map('n', '<leader>gub', gitsigns.toggle_current_line_blame, { desc = 'Toggle [g]it show [b]lame line' })
+        map('n', '<leader>guD', gitsigns.preview_hunk_inline, { desc = 'Toggle [g]it show [D]eleted' })
+      end,
     },
   },
 
@@ -546,9 +638,8 @@ require('lazy').setup({
         },
       }
 
-      require('telescope').load_extension 'recent-files'
-
       -- Enable Telescope extensions if they are installed
+      pcall(require('telescope').load_extension, 'recent-files')
       pcall(require('telescope').load_extension, 'fzf')
       pcall(require('telescope').load_extension, 'ui-select')
 
@@ -1082,6 +1173,8 @@ require('lazy').setup({
         ['<S-Tab>'] = { 'snippet_backward', 'fallback' },
         ['<Up>'] = { 'select_prev', 'fallback' },
         ['<Down>'] = { 'select_next', 'fallback' },
+        ['<PageUp>'] = { wrap_scroll_page(scroll_page_up), 'fallback' },
+        ['<PageDown>'] = { wrap_scroll_page(scroll_page_down), 'fallback' },
         ['<C-p>'] = { 'select_prev', 'fallback_to_mappings' },
         ['<C-n>'] = { 'select_next', 'fallback_to_mappings' },
         ['<C-b>'] = { 'scroll_documentation_up', 'fallback' },
@@ -1219,6 +1312,7 @@ require('lazy').setup({
   },
 
   require 'kickstart.plugins.autopairs',
+
   { import = 'custom.plugins' },
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
   -- { import = 'custom.plugins' },

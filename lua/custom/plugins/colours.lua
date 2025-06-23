@@ -1,11 +1,19 @@
--- [[ Colour schemes ]]
 return {
-  { 'racakenon/mytilus' },
-  { 'miikanissi/modus-themes.nvim' },
-  { 'catppuccin/nvim' },
-  { 'yorumicolors/yorumi.nvim' },
-  { 'humbertocarmona/kanagawa-mod.nvim' },
-  { 'lucasprag/simpleblack' },
-  { 'vimoxide/vim-cinnabar' },
+  'racakenon/mytilus',
+  'miikanissi/modus-themes.nvim',
+  'catppuccin/nvim',
+  'yorumicolors/yorumi.nvim',
+  'humbertocarmona/kanagawa-mod.nvim',
+  'lucasprag/simpleblack',
+  'vimoxide/vim-cinnabar',
+  'sainnhe/everforest',
+  'gbprod/nord.nvim',
+  'maxmx03/solarized.nvim',
+  'olimorris/onedarkpro.nvim',
+  'edeneast/nightfox.nvim',
+  'projekt0n/github-nvim-theme',
+  'marko-cerovac/material.nvim',
+  'nyoom-engineering/oxocarbon.nvim',
+  'phha/zenburn.nvim',
+  'mofiqul/dracula.nvim',
 }
--- [[ End colour schemes ]]
