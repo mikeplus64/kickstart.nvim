@@ -100,9 +100,12 @@ vim.g.have_nerd_font = true
 
 -- Make line numbers default
 vim.o.number = true
+vim.o.relativenumber = true
+
+vim.g.nowrap = true -- Don't wrap by default
+
 -- You can also add relative line numbers, to help with jumping.
 --  Experiment for yourself to see if you like it!
--- vim.o.relativenumber = true
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.o.mouse = 'a'
@@ -187,12 +190,27 @@ vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
 -- Buffer
 vim.keymap.set('n', '<leader>bd', function()
-  Snacks.bufdelete()
+  require('snacks').bufdelete()
 end, { desc = 'Delete buffer' })
 vim.keymap.set('n', '<leader>bo', function()
-  Snacks.bufdelete.other()
+  require('snacks').bufdelete.other()
 end, { desc = 'Delete other buffers' })
 vim.keymap.set('n', '<leader>bD', '<cmd>:bd<cr>', { desc = 'Delete buffer and window' })
+
+-- UI shit
+vim.keymap.set('n', '<leader>uw', '<cmd>set wrap!<cr>', { desc = 'Toggle line wrapping' })
+
+-- Binding to toggle relative numbering, also enables line numbering in case it was off
+vim.keymap.set('n', '<leader>ur', function()
+  vim.o.number = true
+  vim.o.relativenumber = not vim.o.relativenumber
+end, { desc = 'Toggle [r]elative numbering', noremap = true, silent = true })
+
+-- Binding to toggle line numbering
+vim.keymap.set('n', '<leader>un', function()
+  vim.o.number = not vim.o.number
+  vim.o.relativenumber = vim.o.number and vim.o.relativenumber
+end, { desc = 'Toggle [n]umbering', noremap = true, silent = true })
 
 -- Better indentation
 vim.keymap.set('v', '>', '>gv')
@@ -316,11 +334,31 @@ require('lazy').setup({
       bigfile = { enabled = true },
       bufdelete = { enabled = true },
       dashboard = { enabled = true },
-      explorer = { enabled = true },
+      explorer = {
+        enabled = true,
+        replace_netrw = true,
+      },
       indent = { enabled = true },
       input = { enabled = true },
       picker = { enabled = true },
-      notifier = { enabled = true },
+      notifier = {
+        enabled = true,
+        filter = function(notif)
+          --
+          -- Filter out noise caused by haskell-language-server when editing cabal files
+          --
+          -- LSP :: Error from the Language Server: No plugins are available to handle this SMethod_TextDocumentDocumentHighlight request.
+          -- Plugins installed for this method, but not available to handle this request are:
+          -- ghcide-hover-and-symbols does not support .cabal filetypes). (Method not Found)
+          --
+          -- See https://github.com/haskell/haskell-language-server/issues/4565
+          --
+          if string.find(notif.msg, 'No plugins are available to handle this SMethod') then
+            return false
+          end
+          return true
+        end,
+      },
       quickfile = { enabled = true },
       scope = { enabled = true },
       scroll = { enabled = false },
@@ -331,6 +369,16 @@ require('lazy').setup({
 
   -- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
   'NMAC427/guess-indent.nvim', -- Detect tabstop and shiftwidth automatically
+
+  {
+    'booperlv/nvim-gomove',
+    opts = {
+      map_defaults = true,
+      reindent = false,
+      undojoin = true,
+      move_past_end_col = true,
+    },
+  },
 
   {
     'NotAShelf/direnv.nvim',
@@ -417,6 +465,7 @@ require('lazy').setup({
     event = 'VimEnter',
     dependencies = {
       'nvim-lua/plenary.nvim',
+      'mollerhoj/telescope-recent-files.nvim',
       { -- If encountering errors, see telescope-fzf-native README for installation instructions
         'nvim-telescope/telescope-fzf-native.nvim',
 
@@ -431,7 +480,8 @@ require('lazy').setup({
         end,
       },
       { 'nvim-telescope/telescope-ui-select.nvim' },
-
+      { 'nvim-telescope/telescope-file-browser.nvim' },
+      { 'nvim-telescope/telescope-project.nvim' },
       -- Useful for getting pretty icons, but requires a Nerd Font.
       { 'nvim-tree/nvim-web-devicons', enabled = vim.g.have_nerd_font },
     },
@@ -468,9 +518,6 @@ require('lazy').setup({
         -- },
         -- pickers = {}
         pickers = {
-          find_files = {
-            hidden = false,
-          },
           colorscheme = {
             enable_preview = true,
           },
@@ -483,8 +530,23 @@ require('lazy').setup({
           file_browser = {
             respect_gitignore = true,
           },
+
+          smart_open = {
+            match_algorithm = 'fzy',
+          },
+
+          project = {
+            base_dirs = { '~/org' },
+            on_project_selected = function(prompt_bufnr)
+              local project_actions = require 'telescope._extensions.project.actions'
+              project_actions.change_working_directory(prompt_bufnr, false)
+              require('snacks').picker.explorer()
+            end,
+          },
         },
       }
+
+      require('telescope').load_extension 'recent-files'
 
       -- Enable Telescope extensions if they are installed
       pcall(require('telescope').load_extension, 'fzf')
@@ -493,13 +555,21 @@ require('lazy').setup({
       -- See `:help telescope.builtin`
       local builtin = require 'telescope.builtin'
 
+      vim.keymap.set('n', '<leader>:', 'Telescope comand_history', { desc = 'Command history' })
+
       -- Files
-      vim.keymap.set('n', '<leader>fd', ':Telescope file_browser<CR>', { desc = 'Browse [F]iles' })
+      -- open file_browser with the path of the current buffer
+      vim.keymap.set('n', '<leader>fe', function()
+        require('snacks').picker.explorer()
+      end, { desc = '[F]ile [E]xplorer' })
+
+      vim.keymap.set('n', '<leader>fb', ':Telescope file_browser path=%:p:h select_buffer=true<CR>', { desc = '[F]ile [B]rowser' })
       vim.keymap.set('n', '<Leader>ff', function()
-        builtin.find_files {
-          hidden = false,
-          find_command = { 'fd' },
-        }
+        require('telescope').extensions['recent-files'].recent_files {}
+        -- telescope.extensions.smart_open.smart_open {
+        --   cwd_only = true,
+        --   filename_first = false,
+        -- }
       end, { noremap = true, silent = true, desc = 'Find [F]iles' })
 
       vim.keymap.set('n', '<leader>f/', builtin.grep_string, { desc = 'Search current [W]ord' })
@@ -514,12 +584,14 @@ require('lazy').setup({
 
       vim.keymap.set('n', '<leader>cX', builtin.diagnostics, { desc = 'Search [D]iagnostics' })
 
-      vim.keymap.set('n', '<leader>/', builtin.live_grep, { desc = 'Search project' })
+      vim.keymap.set('n', '<leader>/', builtin.live_grep, { desc = 'Search cwd' })
 
       -- UI binds
+      vim.keymap.set('n', '<leader>uc', builtin.colorscheme, { desc = 'Select [T]heme' })
+
+      -- Help binds
       vim.keymap.set('n', '<leader>hT', builtin.builtin, { desc = 'Select [T]elescope' })
-      vim.keymap.set('n', '<leader>ht', builtin.colorscheme, { desc = 'Select [T]heme' })
-      vim.keymap.set('n', '<leader>hk', builtin.colorscheme, { desc = 'Search [K]eymaps' })
+      vim.keymap.set('n', '<leader>hk', builtin.keymaps, { desc = 'Search [K]eymaps' })
 
       -- Slightly advanced example of overriding default behavior and theme
       vim.keymap.set('n', '<leader>b/', function()
@@ -540,12 +612,12 @@ require('lazy').setup({
           prompt_title = 'Live Grep in Open Buffers',
         }
       end, { desc = 'Search [/] in Open [B]uffers' })
-    end,
-  },
 
-  {
-    'nvim-telescope/telescope-file-browser.nvim',
-    dependencies = { 'nvim-telescope/telescope.nvim', 'nvim-lua/plenary.nvim' },
+      -- Projects
+      vim.keymap.set('n', '<leader>p', function()
+        require('telescope').extensions.project.project {}
+      end, { desc = '[P]rojects' })
+    end,
   },
 
   {
@@ -565,8 +637,10 @@ require('lazy').setup({
         return
       end
       cybu.setup()
-      vim.keymap.set('n', 'K', '<Plug>(CybuPrev)')
-      vim.keymap.set('n', 'J', '<Plug>(CybuNext)')
+      vim.keymap.set('n', 'H', '<Plug>(CybuLastusedPrev)')
+      vim.keymap.set('n', 'L', '<Plug>(CybuLastusedNext)')
+      vim.keymap.set('n', '[b', '<Plug>(CybuPrev)')
+      vim.keymap.set('n', ']b', '<Plug>(CybuNext)')
     end,
   },
 
@@ -583,6 +657,7 @@ require('lazy').setup({
       },
     },
   },
+
   {
     -- Main LSP Configuration
     'neovim/nvim-lspconfig',
@@ -847,8 +922,45 @@ require('lazy').setup({
   -- Haskell
   {
     'mrcjkb/haskell-tools.nvim',
+    ft = { 'haskell', 'lhaskell', 'cabal', 'cabalproject' },
     version = '^5',
     lazy = false,
+    config = function()
+      local ht = require 'haskell-tools'
+      vim.g.haskell_tools = {
+        tools = {
+          hover = {
+            enable = false,
+          },
+        },
+        hls = {
+          on_attach = function(_client, bufnr)
+            local function mkopts(desc)
+              return vim.tbl_extend('keep', {
+                desc = desc,
+                noremap = true,
+                silent = true,
+              }, { buffer = bufnr })
+            end
+            vim.keymap.set('n', '<space>cA', '<Plug>HaskellHoverAction', mkopts 'Haskell hover actions')
+            vim.keymap.set('n', '<leader>cl', vim.lsp.codelens.run, mkopts 'Run code lens')
+            vim.keymap.set('n', '<leader>cs', ht.hoogle.hoogle_signature, mkopts 'Search on Hoogle')
+          end,
+          settings = {
+            haskell = {
+              plugin = {
+                stan = {
+                  globalOn = false,
+                },
+                ['ghcide-type-lenses'] = { -- show/add missing type signatures
+                  globalOn = false,
+                },
+              },
+            },
+          },
+        },
+      }
+    end,
   },
 
   { -- Autoformat
@@ -990,7 +1102,13 @@ require('lazy').setup({
       },
 
       sources = {
-        default = { 'lsp', 'path', 'snippets', 'lazydev' },
+        default = {
+          'lsp',
+          'path',
+          'snippets',
+          'lazydev',
+          'buffer',
+        },
         providers = {
           lazydev = { module = 'lazydev.integrations.blink', score_offset = 100 },
         },
@@ -1005,7 +1123,7 @@ require('lazy').setup({
       -- the rust implementation via `'prefer_rust_with_warning'`
       --
       -- See :h blink-cmp-config-fuzzy for more information
-      fuzzy = { implementation = 'lua' },
+      fuzzy = { implementation = 'prefer_rust_with_warning' },
 
       -- Shows a signature help window while you type arguments for a function
       signature = { enabled = true },
